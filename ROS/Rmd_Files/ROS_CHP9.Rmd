@@ -1,0 +1,240 @@
+---
+title: "ROS_CHP9"
+author: "Michael Rowlands"
+date: '2024-04-13'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, include=FALSE}
+library(tidyverse)
+library(rstanarm)
+library(rosdata)
+```
+
+# Question 7
+
+Repeat analysis of section 9.5 on the earnings data - that is, perform a mock sensitivity analysis on the choice of prior on the inference of the realationship between height and earnings. 
+
+We will compare the inferences of the relationship between centered height (height - sample_mean(height) in inches)  and earnings (dollars/year) coming from a linear model of: 
+
+$$earnings_{i} \sim \text{Normal}(\mu_{i}, \sigma)$$
+$$\mu_{i} = \alpha + \beta (\text{height}_{i} - \bar{\text{height}})$$
+with the choice of priors being imporper as in:
+$$ \alpha \sim \text{Unif}(-\infty, \infty)$$
+$$ \beta \sim \text{Unif}(-\infty, \infty)$$
+Weak default priors as in:
+
+
+$$ \alpha \sim \text{Normal}(\bar{\text{earnings}}, 2.5*\text{sd(earnings)})$$
+$$ \beta \sim \text{Normal} \left (0,2.5*\frac{\text{sd(earnings)}}{\text{sd(height)}} \right)$$
+
+Weakly Informative priors as in:
+
+$$ \alpha \sim \text{Normal}(20000,2500)$$
+$$ \beta \sim \text{Normal} \left (0,1000 \right)$$
+We will also consider the results of being too restrictive on the prior for the $\beta$ coefficent as in:
+
+
+$$ \alpha \sim \text{Normal}(20000,2500)$$
+$$ \beta \sim \text{Normal} \left (0,250 \right)$$
+```{r}
+#Q7
+
+data(earnings)
+
+#Center height for easier intercept prior
+earnings$c_height <- earnings$height - mean(earnings$height)
+
+#Uniform
+mod_unif <- stan_glm(earn ~ c_height, data=earnings, prior = NULL, prior_intercept = NULL, prior_aux = NULL, refresh=0)
+
+#Weak automatic priors
+mod_weak <- stan_glm(earn ~ c_height, data=earnings, refresh=0)
+
+#Informative priors
+mod_inform <- stan_glm(earn ~ c_height, prior=normal(0,1000), prior_intercept = normal(20000,2500), data=earnings, refresh=0)
+
+mod_inform_2 <- stan_glm(earn ~ c_height, prior = normal(0,250), prior_intercept = normal(20000, 2500), data=earnings, refresh=0)
+
+```
+
+
+```{r, echo=FALSE}
+print("=================UNIFORM PRIOR====================")
+print(mod_unif)
+print("===================WEAK PRIOR======================")
+print(mod_weak)
+print("===================INFORMATIVE PRIOR=====================")
+print(mod_inform)
+print("===================INFORMATIVE (BUT BAD) PRIOR====================")
+print(mod_inform_2)
+```
+
+We see that the inferences in this case are essentially equivalent independent of out choice of prior except in the case of the final model with too restrictive of a prior. This is because the data are more informative than any of the first three priors and so affect the posterior more than the priors do. In the case of the last prior we are telling the model that we have to have really strong evidence in the data to conculde that the relationship between height and earnings to be outside of -250 to 250 dollars/inch.
+
+We will perform posterior predictive checks for each model to visualize these results.
+
+```{r}
+
+#Posterior Draws
+
+sims_unif <- as.matrix(mod_unif)
+a_unif <- sims_unif[,1]
+b_unif <- sims_unif[,2]
+unif <- data.frame(a_unif, b_unif)
+
+
+sims_weak <- as.matrix(mod_weak)
+a_weak <- sims_weak[,1]
+b_weak <- sims_weak[,2]
+weak <- data.frame(a_weak, b_weak)
+
+sims_inform <- as.matrix(mod_inform)
+a_inform <- sims_inform[,1]
+b_inform <- sims_inform[,2]
+inform <- data.frame(a_inform, b_inform)
+
+sims_inform_2 <- as.matrix(mod_inform_2)
+a_inform_2 <- sims_inform_2[,1]
+b_inform_2 <- sims_inform_2[,2]
+inform_2 <- data.frame(a_inform_2, b_inform_2)
+```
+
+
+```{r, echo=FALSE}
+#Plotting 
+
+unif %>% ggplot(aes(a_unif, b_unif)) + geom_point() + ggtitle('Posterior Coeffecient Samples from Improper Priors')
+
+earnings %>% ggplot(aes(c_height, earn)) + geom_abline(aes(intercept=a_unif, slope=b_unif), alpha=.8, linewidth = 1/3, data=unif) + geom_point(position = position_jitter(width=.5)) + ggtitle('Posterior Draws from Improper Priors')
+
+weak %>% ggplot(aes(a_weak, b_weak)) + geom_point() + ggtitle('Posterior Coeffecient Samples from Default Weak Priors')
+
+earnings %>% ggplot(aes(c_height, earn)) + geom_abline(aes(intercept=a_weak, slope=b_weak), alpha=.8, linewidth = 1/3, data=weak) + geom_point(position = position_jitter(width=.5)) + ggtitle('Posterior Draws from Default Weak Priors')
+
+inform %>% ggplot(aes(a_inform, b_inform)) + geom_point() + ggtitle('Posterior Coeffecient Samples from Informative Priors')
+
+earnings %>% ggplot(aes(c_height, earn)) + geom_abline(aes(intercept=a_inform, slope=b_inform), alpha=.8, linewidth = 1/3, data=inform) + geom_point(position = position_jitter(width=.5)) + ggtitle('Posterior Draws from Informative Priors')
+
+inform_2 %>% ggplot(aes(a_inform_2, b_inform_2)) + geom_point() + ggtitle('Posterior Coeffecient Samples from Informative (but Bad) Priors')
+
+earnings %>% ggplot(aes(c_height, earn)) + geom_abline(aes(intercept=a_inform_2, slope=b_inform_2), alpha=.8, linewidth = 1/3, data=inform_2) + geom_point(position = position_jitter(width=.5)) + ggtitle('Posterior Draws from Informative (but Bad) Priors')
+
+```
+
+
+
+# Question 8 
+
+We will assume that the resulting sales increase from each minute of advertisement is independent from each other minute of advertisement. 
+```{r}
+sims <- c()
+
+for (i in 1:100000){
+  sim <- rnorm(20,500000,200000) - 300000
+  
+  sims <- c(sims, sum(sim))
+  
+}
+
+ggplot() + aes(sims) + geom_histogram()
+```
+
+```{r, echo=FALSE}
+paste('Simulated expected return on ad campaign:,', mean(sims))
+
+
+paste('Simulated probability of negative net gain:', sum(sims < 1)/100000)
+```
+
+# Question 9
+
+Here is a model with reasonable priors for the slope and intercept based on the information stated in the problem.
+$$y \sim \text{Normal}(\mu_{i}, \sigma)$$
+$$\mu_{i} = \alpha + \beta (x - \bar{x})$$
+$$\alpha \sim \text{Normal}(75,10)$$
+$$\beta ~ \text{Normal}(0.65, 0.15)$$
+
+
+```{r, include=FALSE}
+
+#EVERYTHING BELOW IS FROM THE CHAPTER READING
+data(hibbs)
+M1 <- stan_glm(vote ~ growth, data=hibbs, refresh=0)
+```
+
+```{r, include=FALSE}
+new <- data.frame(growth=2.0)
+
+y_point_pred <- predict(M1, newdata = new)
+
+print(y_point_pred)
+```
+
+```{r, include=FALSE}
+sims <- as.matrix(M1)
+
+a <- sims[,1]
+b <- sims[,2]
+
+y_linpred_man <- a + b*new 
+
+y_linpred <- posterior_linpred(M1, newdata = new)
+
+ggplot() + aes(y_linpred) + geom_histogram()
+```
+
+
+```{r, include=FALSE}
+y_pred <- posterior_predict(M1, newdata=new)
+
+
+n_sims <- nrow(sims)
+sigma <- sims[,3]
+y_pred_man <- as.numeric(a + b*new) + rnorm(n_sims, 0, sigma)
+
+pred_p1 <- ggplot() + aes(y_pred) + geom_histogram()
+
+pred_p1_man <- ggplot() + aes(y_pred_man) + geom_histogram()
+
+pred_p1_diff <- ggplot() + aes(y_pred - y_pred_man) + geom_histogram()
+
+pred_p1
+
+pred_p1_man
+
+pred_p1_diff
+```
+
+
+```{r, include=FALSE}
+data(earnings)
+
+earnings$c_height <- earnings$height - mean(earnings$height)
+
+M2 <- stan_glm(weight ~ c_height, data=earnings)
+
+
+new <- data.frame(c_height = 4.0)
+
+y_point_pred <- predict(M2, newdata=new)
+
+y_linpred_2 <- posterior_linpred(M2, newdata=new)
+
+y_postpred_2 <- posterior_predict(M2, newdata=new)
+
+                        
+```
+```{r, include=FALSE}
+ggplot() + aes(y_linpred_2) + geom_histogram()
+
+ggplot() + aes(y_postpred_2) + geom_histogram()
+
+```
